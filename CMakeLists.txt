@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.20)
 
 project(Vkav VERSION 0.6.0 LANGUAGES CXX)
 
@@ -189,6 +189,9 @@ target_sources(vkav PRIVATE
 	src/Settings.cpp
 	src/Data.cpp
 	src/Calculate.cpp
+
+	# to make it listed in VS:
+	src/config
 )
 target_include_directories(vkav
 	PRIVATE
@@ -199,6 +202,7 @@ target_link_libraries(vkav audioModule graphicsModule)
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION MATCHES "8..*")
 	target_link_libraries(vkav -lstdc++fs)
 endif()
+
 
 # copy portaudio.dll to exe output dir
 add_custom_command(TARGET vkav
@@ -245,28 +249,50 @@ if (NOT DEFINED GLSLC_PATH)
 	endif()
 endif()
 
-add_custom_target(shaders)
 function(add_module MODULE STAGES)
-	string(REPLACE " " "_" MODULE_NAME "${MODULE}")
-	add_custom_target(${MODULE_NAME})
-	foreach(STAGE RANGE 1 ${STAGES})
-		if (EXISTS "${CMAKE_SOURCE_DIR}/src/modules/${MODULE}/${STAGE}/shader.vert")
-			set(VERT_COMMAND ${GLSLC_PATH} -O shader.vert -o vert.spv)
-		else()
-			set(VERT_COMMAND "")
-		endif()
+	set(MODINDIR "${CMAKE_SOURCE_DIR}/src/modules/${MODULE}/")
+	#set(MODOUTDIR "$<IF:$<CONFIG:Debug>,Debug,Release>/modules/${MODULE}/")
+	set(MODOUTDIR "${MODINDIR}")
+	add_custom_command(
+		OUTPUT ${MODOUTDIR}config
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${MODOUTDIR}"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MODINDIR}config" "${MODOUTDIR}config"
+		DEPENDS "${MODINDIR}config"
+	)
+	# list shader sources under vkav project and make vkav depend on spv in order
+	# to automatically trigger recompilation of the shader
+	target_sources(vkav PRIVATE ${MODINDIR}config ${MODOUTDIR}config)
+	source_group("Shaders/${MODULE}" FILES ${MODINDIR}config)
 
-		add_custom_target(
-			${MODULE_NAME}_STAGE_${STAGE}
-			COMMAND ${GLSLC_PATH} -O shader.frag -o frag.spv
-			COMMAND ${VERT_COMMAND}
-			BYPRODUCTS frag.spv vert.spv
-			WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/src/modules/${MODULE}/${STAGE}"
+	foreach(STAGE RANGE 1 ${STAGES})
+		set(SHADERSTEM "${MODULE}/${STAGE}/")
+		set(INDIR "${MODINDIR}/${STAGE}/")
+		set(OUTDIR "${MODOUTDIR}/${STAGE}/")
+
+		add_custom_command(
+			OUTPUT ${OUTDIR}frag.spv
+			COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTDIR}"
+			COMMAND ${GLSLC_PATH} -O "${INDIR}shader.frag" -o ${OUTDIR}frag.spv
+			DEPENDS ${INDIR}shader.frag
 		)
-		add_dependencies(${MODULE_NAME} ${MODULE_NAME}_STAGE_${STAGE})
+		target_sources(vkav PRIVATE ${INDIR}shader.frag ${OUTDIR}frag.spv)
+		source_group("Shaders/${SHADERSTEM}" FILES ${INDIR}shader.frag)
+
+		if (EXISTS "${INDIR}shader.vert")
+			add_custom_command(
+				OUTPUT ${OUTDIR}vert.spv
+				COMMAND ${GLSLC_PATH} -O "${INDIR}shader.vert" -o ${OUTDIR}vert.spv
+				DEPENDS ${INDIR}shader.vert
+			)
+			target_sources(vkav PRIVATE ${INDIR}shader.vert ${OUTDIR}vert.spv)
+			source_group("Shaders/${SHADERSTEM}" FILES ${INDIR}shader.vert)
+		endif()
 	endforeach()
-	add_dependencies(shaders ${MODULE_NAME})
 endfunction()
+
+# hide compiled shaders in sub-folder
+source_group("Shaders/generated" REGULAR_EXPRESSION "${CMAKE_BINARY_DIR}.*")
+source_group("Shaders/generated" REGULAR_EXPRESSION ".*\.spv$")
 
 add_module(background 1)
 add_module(bars 1)
