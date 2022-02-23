@@ -251,8 +251,8 @@ endif()
 
 function(add_module MODULE STAGES)
 	set(MODINDIR "${CMAKE_SOURCE_DIR}/src/modules/${MODULE}/")
-	#set(MODOUTDIR "$<IF:$<CONFIG:Debug>,Debug,Release>/modules/${MODULE}/")
-	set(MODOUTDIR "${MODINDIR}")
+	set(MODOUTDIR "$<IF:$<CONFIG:Debug>,Debug,Release>/modules/${MODULE}/")
+	
 	add_custom_command(
 		OUTPUT ${MODOUTDIR}config
 		COMMAND ${CMAKE_COMMAND} -E make_directory "${MODOUTDIR}"
@@ -263,6 +263,9 @@ function(add_module MODULE STAGES)
 	# to automatically trigger recompilation of the shader
 	target_sources(vkav PRIVATE ${MODINDIR}config ${MODOUTDIR}config)
 	source_group("Shaders/${MODULE}" FILES ${MODINDIR}config)
+
+	# everything should be copied to the binary dir when this is finished
+	set(MODOUTDIR "${MODINDIR}")
 
 	foreach(STAGE RANGE 1 ${STAGES})
 		set(SHADERSTEM "${MODULE}/${STAGE}/")
@@ -291,8 +294,7 @@ function(add_module MODULE STAGES)
 endfunction()
 
 # hide compiled shaders in sub-folder
-source_group("Shaders/generated" REGULAR_EXPRESSION "${CMAKE_BINARY_DIR}.*")
-source_group("Shaders/generated" REGULAR_EXPRESSION ".*\.spv$")
+source_group("Shaders/generated" REGULAR_EXPRESSION "^(${CMAKE_BINARY_DIR}.*|.*\.spv)$")
 
 add_module(background 1)
 add_module(bars 1)
